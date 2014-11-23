@@ -1,0 +1,136 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Yao Wang"
+date: "Friday, November 21, 2014"
+output: html_document
+---  
+##Background  
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).   
+  
+##Getting data  
+
+The training data for this project are available here:    
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)  
+
+```{r, cache=TRUE, warning=FALSE}
+trainurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(trainurl, destfile = "~/machine//project/pml-training.csv", method = "curl", setInternet2(TRUE))
+pmltraining <- read.csv("~/machine//project/pml-training.csv")
+```  
+
+The test data are available here:   
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)  
+
+```{r, cache=TRUE, warning=FALSE}
+testurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(testurl, destfile = "~/machine//project/testing.csv", method = "curl", setInternet2(TRUE))
+pmltesting <- read.csv("~/machine//project/testing.csv")
+```  
+
+```{r}
+dim(pmltraining); dim(pmltesting)
+```  
+
+Checking these datasets, we found there are a lot of missing data. To get a tidy training data, we need to do some cleaning and preprocessing.  
+  
+## Cleaning and Preprocessing the training data 
+
+```{r}
+library(caret)
+library(randomForest)
+```  
+
+We built a function "cleanna" to remove the variables with "NA"s in them:  
+
+```{r}
+cleanna <- function(dataset){
+        n <- ncol(dataset)
+        numcol <- numeric()
+        for(i in 1:n){if (sum(is.na(dataset[,i]))==0){numcol <- c(numcol, i)}}                                   
+        dataset[,numcol]
+}
+```  
+
+First we will apply "cleanna" function to training data.  
+
+```{r}
+nonatrain <- cleanna(pmltraining)
+```  
+
+Then we will diagnose the near zero variance predictors and remove them.  
+
+```{r}
+nzvtrain <- nearZeroVar(nonatrain, saveMetrics=T)
+traindata <- nonatrain[,nzvtrain$nzv=="FALSE"]
+```
+
+The index "X", "user_name", and "timestamp" variables are useless to prediction, so we will remove them.  
+
+```{r}
+traindata <- traindata[, -c(1:5)]
+dim(traindata)
+```  
+
+Now the training data has been reduced to 54 columns.  
+  
+## Modeling  
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. We will use any of the other variables to predict with.  
+
+First, we will subset the training data to two sets. One will be used to built a model, the other will be used to evaluate the model.   
+
+```{r}
+set.seed(123)
+intrain <- createDataPartition(y=traindata$classe, p=0.75, list = FALSE)
+trainsub <- traindata[intrain,]; testsub <- traindata[-intrain,]
+```  
+
+We will use "Random Forests" to train the data. "Random Forests" is one of the two top performing algorithms along with boosting in prediction contest. Although it is difficult to interpret, it is often very accurate.  
+
+```{r, cache=TRUE}
+fit <- randomForest(classe ~ ., data = trainsub, importance = F)
+fit
+varimportance <- varImp(fit)
+order(varimportance, decreasing = TRUE)
+```  
+  
+## Model evaluation  
+
+Confusion matrix can be used to evaluate our model.  
+
+```{r}
+pred <- predict(fit, testsub)
+confusionMatrix(testsub$classe, pred)
+```  
+The accuracy of our model is 99.7%.  
+
+## Predicting testing data with our model   
+ 
+We will predict testing data with the model we built.
+
+```{r}
+answers <- predict(fit, newdata = pmltesting)
+answers
+```
+
+Finally, to submit our answer, we will apply this function:  
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```  
+
+We will create a folder where the files to be written and set that to be the working directory and run: 
+
+```{r,eval=FALSE}
+pml_write_files(answers)
+```  
+  
